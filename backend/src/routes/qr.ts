@@ -3,6 +3,7 @@ import { body, validationResult } from 'express-validator';
 import { authenticate } from '../middleware/auth';
 import { qrScanRateLimiter } from '../middleware/rateLimiter';
 import qrService from '../services/qrService';
+import templateAutoRegenerationService from '../services/templateAutoRegenerationService';
 import { supabase } from '../index';
 
 const router = express.Router();
@@ -265,31 +266,88 @@ router.post('/:qrCodeId/track', [
   qrScanRateLimiter,
   body('action').isIn(['thumbs_up', 'thumbs_down', 'copy_review', 'submit_feedback', 'google_redirect']),
   body('metadata').optional().isObject(),
-  body('reviewContent').optional().isString()
+  body('reviewContent').optional().isString(),
+  body('templateId').optional().isUUID()
 ], async (req: any, res: any) => {
   try {
     const { qrCodeId } = req.params;
-    const { action, metadata, reviewContent } = req.body;
+    const { action, metadata, reviewContent, templateId } = req.body;
 
     // Get QR code info
     const qrCodeInfo = await qrService.getQRCodeInfo(qrCodeId);
+    console.log('QR Code Info structure:', JSON.stringify(qrCodeInfo, null, 2));
 
-    // Log event
+    // Log event (handle google_redirect gracefully if enum not updated)
+    let eventType = action;
+    if (action === 'google_redirect') {
+      // Fallback to copy_review if google_redirect enum doesn't exist
+      eventType = 'copy_review';
+    }
+
     const { error } = await supabase
       .from('analytics')
       .insert({
         business_id: qrCodeInfo.business_id,
         qr_code_id: qrCodeInfo.id,
-        event_type: action,
+        event_type: eventType,
         review_content: reviewContent || null,
         metadata: {
           ...metadata,
+          templateId: templateId || null,
+          originalAction: action, // Store original action in metadata
           timestamp: new Date().toISOString()
         }
       });
 
     if (error) {
       throw error;
+    }
+
+    // Handle template deletion and auto-regeneration for copy_review action
+    if (action === 'copy_review' && templateId) {
+      try {
+        console.log(`Template ${templateId} was copied, deleting and regenerating...`);
+        
+        // Get template details before deletion for regeneration
+        const { data: templateData, error: templateError } = await supabase
+          .from('review_templates')
+          .select(`
+            id,
+            category_id,
+            word_count,
+            review_categories!inner(
+              id,
+              name,
+              description,
+              business_id
+            )
+          `)
+          .eq('id', templateId)
+          .single();
+
+        if (templateError || !templateData) {
+          console.error('Could not find template for regeneration:', templateError);
+        } else {
+          // Delete the used template
+          const { error: deleteError } = await supabase
+            .from('review_templates')
+            .delete()
+            .eq('id', templateId);
+
+          if (deleteError) {
+            console.error('Error deleting used template:', deleteError);
+          } else {
+            console.log(`Successfully deleted template ${templateId}`);
+            
+            // Trigger auto-regeneration with template data
+            const businessId = qrCodeInfo.business_id || (qrCodeInfo.businesses as any)?.id;
+            await templateAutoRegenerationService.regenerateTemplateFromData(templateData, businessId);
+          }
+        }
+      } catch (regenerationError) {
+        console.error('Error in template auto-regeneration:', regenerationError);
+        // Don't fail the main request if regeneration fails
+      }
     }
 
     res.json({

@@ -132,15 +132,33 @@ export default function ReviewPageV2() {
       await navigator.clipboard.writeText(template.content)
       toast.success('Review copied to clipboard!')
 
-      // Track copy event
+      // Track copy event with templateId for deletion and auto-regeneration
       await fetch(apiUrl(`/api/qr/${qrId}/track`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'copy_review',
-          reviewContent: template.content
+          reviewContent: template.content,
+          templateId: template.id
         })
       })
+
+      // Refresh categories to get updated templates (after auto-regeneration)
+      // Add a small delay to allow backend auto-regeneration to complete
+      if (business) {
+        setTimeout(async () => {
+          try {
+            const categoriesResponse = await fetch(apiUrl(`/api/reviews/by-category/${business.id}`))
+            const categoriesData = await categoriesResponse.json()
+            
+            if (categoriesData.success) {
+              setCategories(categoriesData.data)
+            }
+          } catch (refreshError) {
+            console.error('Error refreshing categories:', refreshError)
+          }
+        }, 2000) // 2 second delay to allow auto-regeneration
+      }
 
       // Open Google Reviews
       if (business?.google_place_id) {
@@ -229,28 +247,6 @@ export default function ReviewPageV2() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div 
-        className="py-8 px-4"
-        style={{
-          background: `linear-gradient(135deg, ${business.primary_color}15 0%, ${business.secondary_color}15 100%)`
-        }}
-      >
-        <div className="max-w-4xl mx-auto text-center">
-          {business.logo_url && (
-            <img 
-              src={business.logo_url} 
-              alt={business.name}
-              className="h-16 mx-auto mb-4"
-            />
-          )}
-          <h1 className="text-3xl font-bold text-gray-text mb-2">{business.name}</h1>
-          {business.description && (
-            <p className="text-gray-muted">{business.description}</p>
-          )}
-        </div>
-      </div>
-
       <div className="max-w-4xl mx-auto px-4 py-8">
         {/* Choice View - Thumbs Up/Down */}
         {view === 'choice' && (
@@ -287,8 +283,6 @@ export default function ReviewPageV2() {
         {/* Reviews View - Category Tabs & Templates */}
         {view === 'reviews' && (
           <div>
-            <h2 className="text-2xl font-bold text-gray-text mb-2 text-center">Choose a Review Template</h2>
-            <p className="text-gray-muted mb-6 text-center">Select a category and click "Copy & Post" to share on Google</p>
 
             {categories.length > 0 ? (
               <>
@@ -350,29 +344,29 @@ export default function ReviewPageV2() {
           </div>
         )}
 
-        {/* Feedback View - Google-style Form */}
+        {/* Feedback View - Exact Google Review Form Replica */}
         {view === 'feedback' && (
           <div className="max-w-2xl mx-auto">
             <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-              {/* Header - Similar to Google */}
+              {/* Header - Exact Google Style */}
               <div className="bg-white border-b border-gray-200 p-6">
                 <div className="flex items-center space-x-4 mb-4">
-                  {/* Business Avatar/Logo */}
-                  <div className="w-12 h-12 rounded-full bg-orange-500 flex items-center justify-center text-white text-xl font-semibold flex-shrink-0"
-                       style={{ backgroundColor: business.primary_color }}>
-                    {business.logo_url ? (
-                      <img src={business.logo_url} alt={business.name} className="w-full h-full rounded-full object-cover" />
-                    ) : (
-                      business.name.charAt(0).toUpperCase()
-                    )}
+                  {/* User Profile Picture - Google Style */}
+                  <div className="w-10 h-10 rounded-full bg-orange-500 flex items-center justify-center text-white text-lg font-medium flex-shrink-0">
+                    n
                   </div>
                   <div>
-                    <h3 className="font-medium text-gray-900">{business.name}</h3>
-                    <p className="text-sm text-gray-500">Posting publicly across our platform</p>
+                    <h3 className="font-medium text-gray-900 text-base">neesac ai</h3>
+                    <p className="text-sm text-gray-500 flex items-center">
+                      Posting publicly across Google
+                      <svg className="w-4 h-4 ml-1 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                      </svg>
+                    </p>
                   </div>
                 </div>
 
-                {/* Star Rating Display - Google Style */}
+                {/* Star Rating - Google Style (5 filled stars) */}
                 <div className="flex items-center justify-center space-x-1 mb-2">
                   {[1, 2, 3, 4, 5].map((star) => (
                     <button
@@ -382,7 +376,7 @@ export default function ReviewPageV2() {
                       className="focus:outline-none transition-transform hover:scale-110"
                     >
                       <Star
-                        className={`w-10 h-10 ${
+                        className={`w-8 h-8 ${
                           star <= feedbackData.rating
                             ? 'fill-yellow-400 text-yellow-400'
                             : 'fill-gray-200 text-gray-200'
@@ -393,41 +387,30 @@ export default function ReviewPageV2() {
                 </div>
               </div>
 
-              {/* Form Content */}
+              {/* Form Content - Exact Google Style */}
               <form onSubmit={handleSubmitFeedback} className="p-6">
                 {/* Main Review Textarea - Google Style */}
                 <div className="mb-6">
                   <textarea
                     value={feedbackData.content}
                     onChange={(e) => setFeedbackData({ ...feedbackData, content: e.target.value })}
-                    className="w-full px-3 py-3 border-0 border-b-2 border-gray-200 focus:border-blue-500 focus:ring-0 focus:outline-none resize-none text-gray-700 placeholder-gray-400 text-base"
+                    className="w-full px-0 py-3 border-0 border-b border-gray-300 focus:border-blue-500 focus:ring-0 focus:outline-none resize-none text-gray-700 placeholder-gray-400 text-base leading-relaxed"
                     rows={4}
                     placeholder="Share details of your own experience at this place"
                     required
                   />
                 </div>
 
-                {/* Add Photos Button - Google Style (Optional, can be removed if not needed) */}
+                {/* Add Photos Button - Google Style */}
                 <button
                   type="button"
                   className="w-full py-3 mb-6 rounded-full bg-blue-50 text-blue-600 font-medium hover:bg-blue-100 transition-colors duration-200 flex items-center justify-center space-x-2"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
                   </svg>
                   <span>Add photos and videos</span>
                 </button>
-
-                {/* Additional Comments - Google Style */}
-                <div className="mb-6">
-                  <textarea
-                    value={feedbackData.additionalComments}
-                    onChange={(e) => setFeedbackData({ ...feedbackData, additionalComments: e.target.value })}
-                    className="w-full px-3 py-3 border-0 border-b-2 border-gray-200 focus:border-blue-500 focus:ring-0 focus:outline-none resize-none text-gray-700 placeholder-gray-400 text-base"
-                    rows={3}
-                    placeholder="Any other feedback or suggestions..."
-                  />
-                </div>
 
                 {/* Submit Buttons - Google Style */}
                 <div className="flex justify-end space-x-3 pt-4">
@@ -459,14 +442,16 @@ export default function ReviewPageV2() {
         )}
       </div>
 
-      {/* Footer */}
-      <footer className="py-6 text-center border-t border-gray-200 mt-12">
-        <p className="text-sm text-gray-muted">
-          Powered by{' '}
-          <span className="font-semibold text-primary-dark">neesac</span>
-          <span className="font-semibold text-primary">.ai</span>
-        </p>
-      </footer>
+      {/* Footer - Only show for non-feedback views */}
+      {view !== 'feedback' && (
+        <footer className="py-6 text-center border-t border-gray-200 mt-12">
+          <p className="text-sm text-gray-muted">
+            Powered by{' '}
+            <span className="font-semibold text-primary-dark">neesac</span>
+            <span className="font-semibold text-primary">.ai</span>
+          </p>
+        </footer>
+      )}
     </div>
   )
 }

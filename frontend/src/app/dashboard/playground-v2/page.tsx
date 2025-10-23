@@ -393,7 +393,7 @@ export default function PlaygroundV2Page() {
               <ArrowLeft className="w-6 h-6 text-gray-600 hover:text-primary" />
             </Link>
             <div>
-              <h1 className="text-3xl font-bold text-gray-text">Review Playground V2</h1>
+              <h1 className="text-3xl font-bold text-gray-text">Review Playground</h1>
               <p className="text-gray-muted mt-1">Manage categories and generate review templates</p>
             </div>
           </div>
